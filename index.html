@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robot Mula — Simulador 3D</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#101820;color:#edf3f7}header{padding:14px 18px;background:#1c2b36}h1{font-size:22px;margin:0 0 5px}header p{margin:0;color:#b8c7d1;font-size:13px}main{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:12px;padding:12px;max-width:1400px;margin:auto}#view{height:75vh;min-height:430px;background:#dce6e8;border-radius:12px;overflow:hidden}aside{background:#1c2b36;border-radius:12px;padding:14px;overflow:auto;max-height:75vh}label{display:block;margin:14px 0 5px;font-size:14px}select,input{width:100%}button{padding:10px 12px;border:0;border-radius:8px;background:#e4a83a;color:#1b2329;font-weight:bold;cursor:pointer;margin:5px 3px 5px 0}input[type=range]{accent-color:#e4a83a}.readout{font-weight:bold;color:#f4c66c}.small{font-size:12px;color:#b8c7d1;line-height:1.45}
+.loadGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}.loadGrid>div{background:#293d4a;padding:8px;border-radius:8px;font-size:11px}.loadGrid span{display:block;color:#c7d4dc}.loadGrid b{display:block;margin:4px 0;color:#f4c66c}.bar{height:7px;background:#172630;border-radius:8px;overflow:hidden}.bar i{display:block;height:100%;width:25%;background:#e4a83a;border-radius:8px}.sensorGrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}.sensorGrid>div{background:#293d4a;padding:9px;border-radius:8px}.sensorGrid span{display:block;color:#c7d4dc;font-size:11px}.sensorGrid b{display:block;margin-top:4px;color:#f4c66c;font-size:18px}.balanceGood{border-left:4px solid #55b887}.balanceWarn{border-left:4px solid #e4a83a}.balanceBad{border-left:4px solid #e05d5d}.status{background:#293d4a;padding:9px;border-radius:8px;margin-top:12px;font-size:13px}footer{padding:0 16px 16px;color:#b8c7d1;font-size:12px}@media(max-width:800px){main{grid-template-columns:1fr}#view{height:55vh;min-height:350px}aside{max-height:none}}
+</style>
+</head><body>
+<header><h1>Robot Mula — Simulador 3D conceptual</h1><p>Modelo fiel al plano conceptual · 200 × 65 × 95 cm · cabeza cuadrada con panel solar, cápsula única y caja trasera de herramientas.</p></header>
+<main><section id="view"></section><aside>
+<h3>Controles de simulación</h3><label>Tipo de marcha</label><select id="gait"><option value="walk">Marcha lenta</option><option value="trot">Trote diagonal</option><option value="adaptive">Marcha adaptativa</option></select>
+<button id="start">Iniciar movimiento</button><button id="reset">Reiniciar</button><button id="home">Vista inicial</button>
+<label>Velocidad: <span id="speedVal" class="readout">1.0</span></label><input id="speed" type="range" min=".3" max="2" step=".1" value="1">
+<label>Carga: <span id="loadVal" class="readout">25 kg</span></label><input id="load" type="range" min="0" max="60" step="1" value="25">
+<label>Distribución adelante/atrás: <span id="longVal" class="readout">0%</span></label><input id="long" type="range" min="-50" max="50" value="0">
+<label>Distribución izquierda/derecha: <span id="sideVal" class="readout">0%</span></label><input id="side" type="range" min="-50" max="50" value="0"><p class="small">Positivo (+): izquierda del robot · Negativo (−): derecha. La carga centrada no desplaza el centro de masa.</p>
+<label>Escenarios rápidos</label><button data-case="center">Carga centrada</button><button data-case="front">Carga adelante</button><button data-case="side">Carga lateral</button><button data-case="over">Sobrecarga 55 kg</button>
+<hr style="border:0;border-top:1px solid #405461;margin:18px 0">
+<h3>Distribución y equilibrio</h3>
+<div class="status" id="balanceStatus">Equilibrio visual: carga centrada</div>
+<p class="small" id="cgReadout">Centro de carga: X 0% · lateral 0%</p>
+<div class="loadGrid">
+  <div><span>Trasera derecha</span><b id="share0">25%</b><div class="bar"><i id="bar0"></i></div></div>
+  <div><span>Trasera izquierda</span><b id="share1">25%</b><div class="bar"><i id="bar1"></i></div></div>
+  <div><span>Delantera derecha</span><b id="share2">25%</b><div class="bar"><i id="bar2"></i></div></div>
+  <div><span>Delantera izquierda</span><b id="share3">25%</b><div class="bar"><i id="bar3"></i></div></div>
+</div>
+<p class="small">Reparto aproximado de la carga útil entre las cuatro patas; el cálculo de estabilidad también considera el peso propio del robot.</p>
+<hr style="border:0;border-top:1px solid #405461;margin:18px 0">
+<h3>Sensores virtuales y terreno</h3>
+<label>Tipo de terreno</label><select id="terrainType"><option value="flat">Plano firme</option><option value="dirt">Tierra irregular</option><option value="rocks">Pedregoso</option><option value="sand">Arena blanda</option><option value="mud">Barro</option><option value="grass">Pastizal</option></select>
+<p class="small" id="terrainDescription">Superficie firme y nivelada.</p>
+<label>Pendiente adelante/atrás: <span id="slopeLongVal" class="readout">0°</span></label><input id="slopeLong" type="range" min="-15" max="15" step="1" value="0">
+<label>Pendiente izquierda/derecha: <span id="slopeSideVal" class="readout">0°</span></label><input id="slopeSide" type="range" min="-15" max="15" step="1" value="0">
+<div class="sensorGrid">
+  <div><span>IMU · inclinación longitudinal</span><b id="imuLong">0°</b></div>
+  <div><span>IMU · inclinación lateral</span><b id="imuSide">0°</b></div>
+  <div><span>Ángulo total estimado</span><b id="imuTotal">0°</b></div>
+  <div><span>Estado de estabilidad</span><b id="imuState">Estable</b></div>
+</div>
+<button id="flatTerrain">Terreno plano</button><button id="slopeTerrain">Pendiente de prueba</button>
+<label style="display:flex;align-items:center;gap:8px"><input id="unevenTest" type="checkbox" style="width:auto;transform:scale(1.2)"> Activar prueba de terreno desnivelado</label>
+<label>Intensidad de desniveles: <span id="roughVal" class="readout">100%</span></label><input id="roughness" type="range" min="50" max="200" step="10" value="100">
+<p class="small" id="adaptReadout">Adaptación de patas: desactivada</p><button id="obstacleCourse">Probar recorrido con obstáculos</button><label style="display:flex;align-items:center;gap:8px"><input id="autoNavigate" type="checkbox" checked style="width:auto;transform:scale(1.2)"> Evasión autónoma de obstáculos altos</label><div class="status" id="navigationStatus">Navegación: trayectoria libre</div><label style="display:flex;align-items:center;gap:8px"><input id="showColliders" type="checkbox" style="width:auto;transform:scale(1.2)"> Mostrar cajas de colisión</label><div class="status" id="collisionStatus">Colisiones: sistema preparado · sin contacto detectado</div><p class="small">Las cajas visibles incluyen chasis, cabeza, patas, obstáculos y una caja de seguridad bajo el suelo. El controlador comprueba el apoyo de los pies y mantiene el chasis por encima del terreno.</p>
+<hr style="border:0;border-top:1px solid #405461;margin:18px 0">
+<h3>Planificación de pisadas</h3>
+<label style="display:flex;align-items:center;gap:8px"><input id="stepPlanner" type="checkbox" checked style="width:auto;transform:scale(1.2)"> Activar planificación anticipada</label>
+<div class="status" id="stepPlanStatus">Planificador activo · buscando apoyos seguros</div>
+<p class="small">Antes de cada apoyo, el sistema evalúa obstáculos y desniveles cercanos e intenta elegir una zona libre para colocar el pie.</p>
+<div class="sensorGrid"><div><span>Pisadas planificadas</span><b id="plannedSteps">0</b></div><div><span>Obstáculos evitados</span><b id="avoidedSteps">0</b></div></div>
+<div class="sensorGrid"><div><span>Fuerza normal total</span><b id="normalForce">0 N</b></div><div><span>Fricción disponible</span><b id="frictionForce">0 N</b></div><div><span>Deslizamiento</span><b id="slipState">Nulo</b></div><div><span>Equilibrio dinámico</span><b id="dynamicBalance">Estable</b></div></div><div class="sensorGrid"><div><span>Margen de estabilidad</span><b id="stabilityMargin">—</b></div><div><span>Apoyos efectivos</span><b id="supportCount">0/4</b></div></div><div class="status balanceGood" id="supportStatus">Polígono de apoyo: esperando contactos</div><p class="small" id="physicsReadout">Contacto elástico y amortiguado · fuerzas aproximadas</p>
+<p class="small">El equilibrio considera el centro de masa combinado (robot + carga), los apoyos reales y el margen del polígono. El apoyo diagonal del trote no se interpreta como caída.</p><p class="small">Sensores simulados: los valores representan la inclinación configurada del terreno y del chasis. No son lecturas de sensores físicos ni una validación dinámica.</p>
+<hr style="border:0;border-top:1px solid #405461;margin:18px 0">
+<h3>Control de articulaciones</h3>
+<label>Modo de control</label><select id="controlMode"><option value="auto">Automático (marchas)</option><option value="manual">Manual (articulaciones)</option></select>
+<p class="small" id="modeHelp">En automático, las patas siguen la marcha seleccionada.</p>
+<div id="manualPanel" hidden>
+  <label>Seleccionar pata</label>
+  <select id="legSelect">
+    <option value="0">Trasera izquierda</option>
+    <option value="1">Trasera derecha</option>
+    <option value="2">Delantera izquierda</option>
+    <option value="3">Delantera derecha</option>
+  </select>
+  <label>Cadera: <span id="hipVal" class="readout">0°</span></label><input id="hipControl" type="range" min="-60" max="60" step="1" value="0">
+  <label>Rodilla: <span id="kneeVal" class="readout">0°</span></label><input id="kneeControl" type="range" min="-60" max="60" step="1" value="0">
+  <label>Tobillo: <span id="ankleVal" class="readout">0°</span></label><input id="ankleControl" type="range" min="-60" max="60" step="1" value="0">
+  <button id="resetLeg">Centrar pata seleccionada</button>
+  <button id="resetAllLegs">Centrar las cuatro patas</button>
+  <p class="small">Los ángulos son controles visuales en grados. No representan límites mecánicos ni posiciones seguras de un prototipo real.</p>
+</div>
+<div class="status" id="status">Estado: detenido · Carga: 25 kg</div><p class="small">La indicación de carga y distribución es didáctica. No calcula tensiones, estabilidad real ni capacidad estructural certificada.</p>
+</aside></main>
+<footer>Modelo visual basado en el plano original (200 × 65 × 95 cm), con cabeza frontal cuadrada, cápsula agrícola única y compartimiento trasero. Las dimensiones son de referencia. Prototipo educativo conceptual. Las colisiones y el modelo de contacto, fricción y equilibrio son aproximaciones educativas; no equivalen a un motor físico multibody validado. El margen del polígono de apoyo es una estimación geométrica simplificada y no predice vuelcos reales. La carga objetivo de 50 kg no está validada físicamente.</footer>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+const host=document.querySelector('#view'),scene=new THREE.Scene();scene.background=new THREE.Color(0xdce6e8);
+const camera=new THREE.PerspectiveCamera(45,host.clientWidth/host.clientHeight,.1,100);camera.position.set(3.8,2.55,5.0);
+const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(host.clientWidth,host.clientHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.05;host.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,.49,0);controls.enableDamping=true;
+scene.add(new THREE.HemisphereLight(0xffffff,0x65727a,1.65));const sun=new THREE.DirectionalLight(0xffffff,2.7);sun.position.set(4,9,6);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-8;sun.shadow.camera.right=8;sun.shadow.camera.top=8;sun.shadow.camera.bottom=-8;scene.add(sun);
+const mat=(c,m=0)=>new THREE.MeshStandardMaterial({color:c,metalness:m,roughness:.55});
+function box(parent,x,y,z,sx,sy,sz,material){const o=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),material);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;parent.add(o);return o}
+function cylinder(parent,x,y,z,r1,r2,len,material,axis='z'){const o=new THREE.Mesh(new THREE.CylinderGeometry(r1,r2,len,24),material);o.position.set(x,y,z);if(axis==='z')o.rotation.x=Math.PI/2;o.castShadow=true;o.receiveShadow=true;parent.add(o);return o}
+const terrain=new THREE.Group();scene.add(terrain);const obstacleMeshes=[],obstacleHelpers=[];let obstacleBoundsCache=[];const groundGeo=new THREE.PlaneGeometry(240,240,480,480);const ground=new THREE.Mesh(groundGeo,mat(0xffffff));ground.rotation.x=-Math.PI/2;ground.position.y=-.03;ground.receiveShadow=true;terrain.add(ground);
+// Caja de colisión de seguridad bajo la malla del suelo. Sigue la inclinación y el desplazamiento del terreno.
+const groundSafetyCollider=new THREE.Mesh(new THREE.BoxGeometry(240,.22,240),new THREE.MeshBasicMaterial({color:0x19a9c8,wireframe:true,transparent:true,opacity:.24,depthWrite:false}));groundSafetyCollider.position.y=-.20;groundSafetyCollider.visible=false;terrain.add(groundSafetyCollider);
+const terrainGrid=new THREE.GridHelper(240,240,0x87978d,0xa9b5ad);terrain.add(terrainGrid);const obstacles=new THREE.Group();terrain.add(obstacles);
+const terrainTextures={};
+function makeTerrainTexture(type){
+  if(terrainTextures[type])return terrainTextures[type];
+  const c=document.createElement('canvas');c.width=c.height=512;const ctx=c.getContext('2d');
+  const base={flat:'#777f70',dirt:'#76583b',rocks:'#696e70',sand:'#c2a56d',mud:'#44382e',grass:'#526b3e'}[type];ctx.fillStyle=base;ctx.fillRect(0,0,512,512);
+  let seed={flat:11,dirt:23,rocks:37,sand:41,mud:53,grass:67}[type];const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+  for(let i=0;i<5200;i++){
+    const x=rnd()*512,y=rnd()*512,a=.05+rnd()*.22;
+    if(type==='grass') {ctx.strokeStyle=`rgba(${35+Math.floor(rnd()*35)},${65+Math.floor(rnd()*65)},${22+Math.floor(rnd()*25)},${a})`;ctx.lineWidth=1+rnd()*2;ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+(rnd()-.5)*9,y-3-rnd()*12);ctx.stroke();}
+    else if(type==='rocks') {const r=1+rnd()*5;ctx.fillStyle=`rgba(${rnd()>.5?210:20},${rnd()>.5?210:20},${rnd()>.5?210:20},${a+.08})`;ctx.beginPath();ctx.ellipse(x,y,r*1.5,r, rnd(),0,Math.PI*2);ctx.fill();}
+    else if(type==='sand') {ctx.strokeStyle=`rgba(245,220,160,${a})`;ctx.lineWidth=1+rnd()*2;ctx.beginPath();ctx.arc(x,y,4+rnd()*24,.1,2.5+rnd()*2);ctx.stroke();}
+    else if(type==='mud') {ctx.fillStyle=`rgba(${rnd()>.5?105:8},${rnd()>.5?80:5},${rnd()>.5?55:3},${a})`;ctx.beginPath();ctx.ellipse(x,y,4+rnd()*18,2+rnd()*8,rnd()*3,0,Math.PI*2);ctx.fill();}
+    else {ctx.fillStyle=`rgba(${type==='flat'?210:190},${type==='flat'?210:150},${type==='flat'?195:105},${a})`;ctx.fillRect(x,y,1+rnd()*3,1+rnd()*3);}
+  }
+  if(type==='dirt'||type==='flat'){ctx.strokeStyle='rgba(35,25,15,.13)';for(let i=0;i<55;i++){const y=rnd()*512;ctx.beginPath();ctx.moveTo(0,y);ctx.bezierCurveTo(150,y-8,320,y+8,512,y-4);ctx.stroke();}}
+  const tex=new THREE.CanvasTexture(c);tex.colorSpace=THREE.SRGBColorSpace;tex.wrapS=tex.wrapT=THREE.RepeatWrapping;tex.repeat.set(7,7);tex.anisotropy=renderer.capabilities.getMaxAnisotropy();terrainTextures[type]=tex;return tex;
+}
+function terrainHeightAt(x,z,type=$('terrainType').value){let h=0;if(type==='dirt')h=.10*Math.sin(x*1.7)*Math.cos(z*1.35)+.05*Math.sin(z*3.1);if(type==='rocks')h=.035*Math.sin(x*2)*Math.cos(z*2);if(type==='sand')h=.12*Math.sin(x*.65+z*.4)+.035*Math.cos(z*1.2);if(type==='mud')h=.025*Math.sin(x*2.8)*Math.cos(z*2.4);if(type==='grass')h=.045*Math.sin(x*1.4)*Math.cos(z*1.6);if($('unevenTest')?.checked){const k=Number($('roughness').value)/100;h*=k;if(type==='flat')h=(.075*Math.sin(x*2.2)*Math.cos(z*1.8)+.035*Math.sin(z*3.4))*k;}return h;}
+function setTerrain(type){
+  const pos=ground.geometry.attributes.position;
+  for(let i=0;i<pos.count;i++){const x=pos.getX(i),y=pos.getY(i);pos.setZ(i,terrainHeightAt(x,y,type));}
+  ground.geometry.computeVertexNormals();ground.geometry.computeBoundingBox();ground.geometry.computeBoundingSphere();ground.material.map=makeTerrainTexture(type);ground.material.color.set(0xffffff);ground.material.needsUpdate=true;
+  while(obstacles.children.length){const o=obstacles.children.pop();o.geometry?.dispose();o.material?.dispose();}
+  obstacleMeshes.length=0;obstacleHelpers.forEach(h=>{scene.remove(h);h.geometry?.dispose();h.material?.dispose();});obstacleHelpers.length=0;
+  if(type==='rocks'){
+    
+    const rockMat=[mat(0x777b7c,.08),mat(0x555d60,.12),mat(0x92918a,.05)];
+    for(let i=0;i<30;i++){const r=.10+(i%5)*.035;const x=-4+(i*1.37)%8,z=-3.8+(i*2.17)%7.6;for(const offset of [0,10]){const rock=new THREE.Mesh(new THREE.DodecahedronGeometry(r,1),rockMat[i%3]);rock.position.set(x+offset,.02+r*.45,z);rock.rotation.set(i*.31,i*.57,i*.19);rock.scale.set(1.25,.55+(i%3)*.12,.9);rock.castShadow=true;rock.receiveShadow=true;obstacles.add(rock);obstacleMeshes.push(rock);const helper=new THREE.Box3Helper(new THREE.Box3(),0xff8a45);helper.visible=$('showColliders')?.checked||false;scene.add(helper);obstacleHelpers.push(helper);}}
+  }
+  terrainGrid.visible=type==='flat';
+  $('terrainDescription').textContent=({flat:'Superficie firme y nivelada con textura granular.',dirt:'Tierra compactada con huellas, grumos y desniveles.',rocks:'Suelo pedregoso con rocas de distintos tamaños y relieve.',sand:'Arena suelta con ondulaciones y pequeñas crestas.',mud:'Barro húmedo con zonas oscuras y pequeñas depresiones.',grass:'Pastizal con vegetación corta y variaciones de color.'})[type];updateTerrainAndSensors();
+}
+const robot=new THREE.Group();
+// Compensa el giro del terreno alrededor del robot. Sin este ajuste, al desplazar
+// una superficie inclinada el plano acumula altura y termina atravesando el modelo.
+function syncTerrainVerticalOffset(){
+  terrain.updateMatrix();
+  const normal=new THREE.Vector3(0,1,0).applyQuaternion(terrain.quaternion).normalize();
+  if(Math.abs(normal.y)<.2)return;
+  terrain.position.y=(normal.x*(robot.position.x-terrain.position.x)+normal.z*(robot.position.z-terrain.position.z))/normal.y;
+}
+
+// Escala dimensional del plano: aprox. 200 cm x 65 cm x 95 cm.
+// La geometria cinemática se conserva en coordenadas locales para no alterar las articulaciones.
+robot.scale.set(.58,.366,.48);
+scene.add(robot);
+const body=new THREE.MeshStandardMaterial({color:0x596f3f,metalness:.34,roughness:.48});
+const bodyLight=new THREE.MeshStandardMaterial({color:0x788d56,metalness:.28,roughness:.52});
+const dark=new THREE.MeshStandardMaterial({color:0x202a2e,metalness:.62,roughness:.38});
+const metal=new THREE.MeshStandardMaterial({color:0x9ca9aa,metalness:.82,roughness:.28});
+const steel=new THREE.MeshStandardMaterial({color:0x59656a,metalness:.88,roughness:.24});
+const rubber=new THREE.MeshStandardMaterial({color:0x171b1d,roughness:.92});
+const orange=new THREE.MeshStandardMaterial({color:0xe28b32,emissive:0x4a1b03,roughness:.35});
+const solar=new THREE.MeshStandardMaterial({color:0x102e58,metalness:.48,roughness:.24});
+const glass=new THREE.MeshPhysicalMaterial({color:0xb7e2e5,transparent:true,opacity:.22,roughness:.12,metalness:.08,transmission:.35,thickness:.08,side:THREE.DoubleSide,depthWrite:false});
+// Chasis principal, bandejas y protecciones laterales.
+box(robot,0,1.55,0,2.25,.62,1.05,body);
+box(robot,0,1.25,0,2.05,.10,.92,dark);
+box(robot,-.05,1.83,-.535,1.9,.48,.035,bodyLight);box(robot,-.05,1.83,.535,1.9,.48,.035,bodyLight);
+for(const z of [-.56,.56]){box(robot,-.05,2.075,z,1.92,.045,.055,metal);for(let i=0;i<9;i++)box(robot,-.88+i*.21,1.83,z*1.045,.018,.25,.012,dark);}
+// Cápsula protectora única: cúpula transparente sobre toda la carga.
+const dome=new THREE.Mesh(new THREE.SphereGeometry(1,48,24,0,Math.PI*2,0,Math.PI/2),glass);dome.scale.set(.99,.53,.49);dome.position.set(-.05,2.06,0);dome.castShadow=true;robot.add(dome);
+for(const z of [-.49,.49]){box(robot,-.05,2.055,z,1.98,.045,.045,dark);for(let x=-.88;x<=.9;x+=.36)cylinder(robot,x,2.055,z,.035,.035,.045,metal,'z');}
+for(const z of [-.515,.515]){for(const x of [-.78,-.30,.18,.66]){box(robot,x,2.015,z,.105,.13,.035,steel);box(robot,x,1.965,z*1.015,.065,.055,.022,metal);cylinder(robot,x,1.94,z*1.04,.018,.018,.018,dark,'z');}}
+// Cabeza cuadrada delantera y panel fotovoltaico superior.
+box(robot,1.42,1.62,0,.66,.68,.76,dark);box(robot,1.42,1.66,.39,.48,.42,.025,steel);
+// Frente técnico orientado hacia +X: marco, visor, dos LED y tres cámaras.
+box(robot,1.765,1.62,0,.045,.47,.66,dark);
+box(robot,1.792,1.62,0,.018,.39,.58,steel);
+for(const z of [-.23,.23]){const bezel=new THREE.Mesh(new THREE.TorusGeometry(.078,.012,8,24),metal);bezel.rotation.y=Math.PI/2;bezel.position.set(1.807,1.62,z);robot.add(bezel);}
+const centerLens=new THREE.Mesh(new THREE.SphereGeometry(.052,18,14),new THREE.MeshPhysicalMaterial({color:0x071b2a,metalness:.45,roughness:.08,clearcoat:1}));centerLens.position.set(1.817,1.62,0);robot.add(centerLens);
+box(robot,1.42,2.015,0,.58,.065,.68,metal);box(robot,1.42,2.06,0,.53,.045,.61,solar);
+for(let i=0;i<5;i++)box(robot,1.42-.22+i*.11,2.085,0,.012,.008,.59,metal);
+for(let i=0;i<4;i++)box(robot,1.42,2.085,-.24+i*.16,.52,.008,.012,metal);
+for(const z of [-.22,.22]){const lens=new THREE.Mesh(new THREE.SphereGeometry(.065,20,16),new THREE.MeshStandardMaterial({color:0x172d39,metalness:.35,roughness:.12}));lens.position.set(1.76,1.67,z);robot.add(lens);}
+for(const z of [-.27,.27])box(robot,1.765,1.48,z,.025,.055,.12,orange);
+// Compartimiento trasero de herramientas, con tapa, cierres y útiles visibles.
+box(robot,-1.37,1.59,0,.48,.57,.84,dark);box(robot,-1.37,1.89,0,.49,.035,.86,steel);
+for(const z of [-.28,.28]){box(robot,-1.37,1.92,z,.08,.035,.045,orange);cylinder(robot,-1.48,1.62,z,.025,.025,.10,metal,'z');}
+for(let i=0;i<3;i++){const handle=cylinder(robot,-1.48,2.17,-.22+i*.22,.025,.025,.62,mat(0x987044), 'y');handle.rotation.z=(i-1)*.08;}
+// Bisagras, cierre frontal y cabezales de herramientas visibles.
+for(const z of [-.30,.30])cylinder(robot,-1.61,1.90,z,.035,.035,.10,metal,'z');
+box(robot,-1.62,1.62,0,.025,.11,.14,orange);
+box(robot,-1.48,2.46,-.22,.16,.045,.12,steel);
+box(robot,-1.48,2.46,0,.20,.035,.055,metal);
+for(let q=-2;q<=2;q++)box(robot,-1.48,2.44,.0+q*.035,.025,.075,.018,metal);
+// Detalles de estructura, tornillos y rejillas de ventilación.
+for(const z of [-.535,.535])for(let x=-.94;x<=.86;x+=.3){cylinder(robot,x,1.55,z,.025,.025,.025,metal,'z');}
+// Nervaduras y paneles de la caja agrícola, manteniendo una única cápsula superior.
+for(const z of [-.555,.555]){
+  for(let x=-.78;x<=.78;x+=.39){box(robot,x,1.48,z,.035,.30,.035,steel);box(robot,x,1.30,z,.12,.035,.045,metal);}
+  box(robot,-.05,1.96,z,.045,.18,.07,bodyLight);
+}
+for(let i=0;i<7;i++)box(robot,-.42+i*.12,1.12,.0,.045,.012,.38,steel);
+box(robot,0,1.12,0,.55,.22,.45,dark);
+// Carga agrícola visible dentro del compartimento: objetos ilustrativos escalados con el peso.
+const cargoGroup=new THREE.Group();robot.add(cargoGroup);
+const produceMats=[mat(0x5e8c35),mat(0x83ad48),mat(0x9fbd62),mat(0x668b3d),mat(0x9c6248)];
+const produce=[];
+for(let i=0;i<28;i++){
+  const col=i%7,row=Math.floor(i/7);
+  // Distribución espejada a ambos lados del eje longitudinal del robot.
+  const baseX=-.63+col*.21,baseZ=[-.30,-.10,.10,.30][row];
+  const mirrorPair=(row===0||row===3)?0:1,colorIndex=(col+mirrorPair)%produceMats.length;
+  const g=new THREE.Group(),baseY=1.94+((col+mirrorPair)%2)*.025;
+  const center=new THREE.Mesh(new THREE.SphereGeometry(.045,12,10),produceMats[colorIndex]);center.scale.set(1,.7,1);g.add(center);
+  for(let leaf=0;leaf<5;leaf++){
+    const a=leaf*Math.PI*2/5,mesh=new THREE.Mesh(new THREE.SphereGeometry(.065,12,9),produceMats[(colorIndex+(leaf%3===0?1:0))%produceMats.length]);
+    mesh.scale.set(.62,.38,1.35);mesh.position.set(Math.cos(a)*.045,.018+Math.sin(leaf*1.7)*.012,Math.sin(a)*.045);mesh.rotation.y=-a;mesh.rotation.x=(leaf-2)*.10;g.add(mesh);
+  }
+  g.position.set(baseX,baseY,baseZ);cargoGroup.add(g);produce.push(g);
+}
+// Marcador del centro de carga y su proyección vertical al suelo.
+const cgMarker=new THREE.Group();robot.add(cgMarker);
+const cgBall=new THREE.Mesh(new THREE.SphereGeometry(.105,18,14),mat(0xe04444));
+cgMarker.add(cgBall);
+const cgStem=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,2.30,8),mat(0xe04444));
+cgStem.position.y=-1.15;cgMarker.add(cgStem);
+const cgGround=new THREE.Mesh(new THREE.CircleGeometry(.16,24),new THREE.MeshBasicMaterial({color:0xe04444,transparent:true,opacity:.35,side:THREE.DoubleSide}));
+cgGround.rotation.x=-Math.PI/2;cgGround.position.y=-2.35;cgMarker.add(cgGround);
+// Polígono de apoyo simplificado entre las posiciones de las patas.
+const supportMat=new THREE.LineBasicMaterial({color:0x238c68});
+const supportPts=[new THREE.Vector3(-.78,.015,-.48),new THREE.Vector3(.78,.015,-.48),new THREE.Vector3(.78,.015,.48),new THREE.Vector3(-.78,.015,.48),new THREE.Vector3(-.78,.015,-.48)];
+const supportLine=new THREE.Line(new THREE.BufferGeometry().setFromPoints(supportPts),supportMat);supportLine.frustumCulled=false;robot.add(supportLine);
+const colliderMaterial=new THREE.MeshBasicMaterial({color:0x27b8e8,wireframe:true,transparent:true,opacity:.62,depthWrite:false});
+const robotColliders=[];
+function addRobotCollider(parent,x,y,z,sx,sy,sz,color=0x27b8e8){const mesh=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity:.58,depthWrite:false}));mesh.position.set(x,y,z);mesh.visible=false;parent.add(mesh);robotColliders.push(mesh);return mesh;}
+addRobotCollider(robot,0,1.55,0,2.28,.66,1.08);addRobotCollider(robot,1.42,1.68,0,.72,.76,.82,0x35d0a0);
+// Envolventes adicionales para la cápsula agrícola y el baúl trasero.
+addRobotCollider(robot,-.05,2.20,0,2.02,.82,1.02,0x58d5e8);addRobotCollider(robot,-1.37,1.62,0,.56,.66,.90,0xffb45c);
+const legs=[];for(const x of [-.78,.78])for(const z of [-.48,.48]){
+  const hip=new THREE.Group();hip.position.set(x,1.35,z);robot.add(hip);
+  cylinder(hip,0,0,0,.19,.19,.22,dark,'z');cylinder(hip,0,0,z<0?-.13:.13,.115,.115,.08,metal,'z');
+  box(hip,0,-.34,0,.19,.68,.18,bodyLight);box(hip,0,-.34,z<0?-.095:.095,.045,.48,.025,steel);
+  // Amortiguador y vástago visibles, inspirados en el detalle de pata del plano.
+  cylinder(hip,.075,-.34,.105,.055,.055,.43,dark,'y');
+  cylinder(hip,.075,-.35,.105,.024,.024,.37,metal,'y');
+  const knee=new THREE.Group();knee.position.set(0,-.68,0);hip.add(knee);
+  cylinder(knee,0,0,0,.15,.15,.19,dark,'z');cylinder(knee,0,0,z<0?-.12:.12,.09,.09,.06,metal,'z');
+  box(knee,0,-.34,0,.15,.68,.15,bodyLight);box(knee,0,-.34,z<0?-.08:.08,.035,.46,.025,metal);
+  cylinder(knee,-.055,-.34,.085,.043,.043,.39,dark,'y');
+  cylinder(knee,-.055,-.35,.085,.018,.018,.34,metal,'y');
+  const ankle=new THREE.Group();ankle.position.set(0,-.68,0);knee.add(ankle);
+  box(ankle,0,-.025,.04,.36,.14,.38,rubber);
+  const footCollider=addRobotCollider(ankle,0,-.025,.04,.39,.18,.41,0xffc04a);
+  for(let q=-1;q<=1;q++)box(ankle,0,-.10,.04+q*.105,.34,.025,.025,steel);
+  legs.push({hip,knee,ankle,x,z,footCollider,manual:{hip:0,knee:0,ankle:0},planOffset:.12,physics:{footY:-1.35,normal:0,friction:0,slip:0,slipOffset:0,contact:false,lastPhase:-1,planningSwing:false,swingStartOffset:-.12,nextPlanOffset:.12,currentZOffset:0,swingStartZOffset:0,nextZOffset:0,plannedWorldX:0,plannedWorldZ:0,plannedY:0,avoided:false}});
+}
+let running=false,t=0,travelDistance=0;const $=id=>document.getElementById(id);
+// Navegación de ruta: el robot mantiene una curva suave y el terreno se desplaza en sentido opuesto.
+let routeHeading=0,routeTarget=0,routeMode='Trayectoria libre',routeSide=1;
+// Indicador simplificado con filtro temporal para evitar cambios de color/texto en cada frame.
+let shownStability='En reposo',candidateStability='En reposo',candidateStabilityTime=0;
+function updateSimpleStability(next,dt){
+  if(next!==candidateStability){candidateStability=next;candidateStabilityTime=0;}
+  else candidateStabilityTime+=dt;
+  const hold=next==='Peligro'?0.22:0.55;
+  if(candidateStabilityTime>=hold)shownStability=next;
+  const color=shownStability==='Compensado'?'#55b887':shownStability==='Peligro'?'#e05d5d':'#e4a83a';
+  const cls=shownStability==='Compensado'?'status balanceGood':shownStability==='Peligro'?'status balanceBad':'status balanceWarn';
+  ['imuState','dynamicBalance'].forEach(id=>{const el=$(id);if(el){el.textContent=shownStability;el.style.color=color;}});
+  const support=$('supportStatus');if(support){support.textContent=shownStability;support.className=cls;}
+  const balance=$('balanceStatus');if(balance){balance.textContent='Estabilidad: '+shownStability;balance.className=cls;}
+}
+function labels(){$('loadVal').textContent=$('load').value+' kg';$('longVal').textContent=$('long').value+'%';$('sideVal').textContent=$('side').value+'%';$('speedVal').textContent=Number($('speed').value).toFixed(1);$('status').textContent=`Estado: ${running?'en movimiento':'detenido'} · Carga: ${$('load').value} kg · Objetivo: 50 kg`;}
+// Las cajas de obstáculos se mantienen en coordenadas de mundo. Así coinciden
+// con los colliders del robot incluso cuando el terreno se desplaza o se inclina.
+function updateCollisionHelpers(){
+  terrain.updateMatrixWorld(true);robot.updateMatrixWorld(true);
+  obstacleBoundsCache=obstacleMeshes.map(o=>new THREE.Box3().setFromObject(o));
+  obstacleBoundsCache.forEach((b,i)=>obstacleHelpers[i].box.copy(b));
+}
+// Mantiene el terreno bajo el robot durante recorridos largos. Se traslada el
+// origen de coordenadas de toda la escena móvil sin cambiar posiciones relativas.
+function rebaseWorldFrame(){
+  let sx=0,sz=0;
+  if(terrain.position.x < -8) sx=10;
+  else if(terrain.position.x > 8) sx=-10;
+  if(terrain.position.z < -8) sz=10;
+  else if(terrain.position.z > 8) sz=-10;
+  if(sx||sz){
+    terrain.position.x+=sx;terrain.position.z+=sz;
+    robot.position.x+=sx;robot.position.z+=sz;
+    camera.position.x+=sx;camera.position.z+=sz;
+    controls.target.x+=sx;controls.target.z+=sz;
+  }
+}
+function obstacleTopAtWorld(x,z,margin=0){
+  let top=null;
+  for(const b of obstacleBoundsCache){
+    if(x>=b.min.x-margin&&x<=b.max.x+margin&&z>=b.min.z-margin&&z<=b.max.z+margin)
+      top=top===null?b.max.y:Math.max(top,b.max.y);
+  }
+  return top;
+}
+function obstacleTopForFoot(x,z,halfX=.195,halfZ=.205){
+  let top=null;
+  for(const b of obstacleBoundsCache){
+    const overlaps=x+halfX>=b.min.x&&x-halfX<=b.max.x&&z+halfZ>=b.min.z&&z-halfZ<=b.max.z;
+    if(overlaps)top=top===null?b.max.y:Math.max(top,b.max.y);
+  }
+  return top;
+}
+function groundWorldAt(worldX,worldZ){
+  const local=terrain.worldToLocal(new THREE.Vector3(worldX,0,worldZ));
+  const h=terrainHeightAt(local.x,local.z);
+  const surface=terrain.localToWorld(new THREE.Vector3(local.x,h,local.z));
+  return surface.y;
+}
+// Estimación anticipada de pendiente local para ajustar velocidad y altura de paso.
+function terrainGradientAt(worldX,worldZ,step=.12){
+  const dx=(groundWorldAt(worldX+step,worldZ)-groundWorldAt(worldX-step,worldZ))/(2*step);
+  const dz=(groundWorldAt(worldX,worldZ+step)-groundWorldAt(worldX,worldZ-step))/(2*step);
+  return {dx,dz,magnitude:Math.hypot(dx,dz),angle:Math.atan(Math.hypot(dx,dz))};
+}
+function terrainRiseAlongPath(x0,z0,x1,z1){
+  const start=groundWorldAt(x0,z0);let rise=0,steepest=0;
+  for(let i=1;i<=12;i++){
+    const q=i/12,x=x0+(x1-x0)*q,z=z0+(z1-z0)*q;
+    const y=groundWorldAt(x,z);rise=Math.max(rise,y-start);
+    steepest=Math.max(steepest,terrainGradientAt(x,z).magnitude);
+  }
+  return {rise:Math.max(0,rise),steepest};
+}
+function obstacleApproachHeight(worldX,worldZ,margin=.30){
+  let lift=0;
+  for(const b of obstacleBoundsCache){
+    const dx=Math.max(b.min.x-worldX,0,worldX-b.max.x);
+    const dz=Math.max(b.min.z-worldZ,0,worldZ-b.max.z);
+    const d=Math.hypot(dx,dz);
+    if(d<margin){const q=1-THREE.MathUtils.clamp(d/margin,0,1);lift=Math.max(lift,(b.max.y-groundWorldAt(worldX,worldZ))*q*q*(3-2*q));}
+  }
+  return Math.max(0,lift);
+}
+// Comprueba cuatro puntos inferiores del chasis contra la superficie y los obstáculos.
+// Si alguna esquina queda por debajo, eleva el conjunto sin alterar la fase de marcha.
+const chassisBottomSamples=[];
+for(const x of [-1.70,-1.12,-.56,0,.56,1.12,1.72])for(const z of [-.50,0,.50])chassisBottomSamples.push([x,1.18,z]);
+function applyGroundSafety(){
+  terrain.updateMatrixWorld(true);robot.updateMatrixWorld(true);
+  let correction=0;
+  for(const p of chassisBottomSamples){
+    const w=robot.localToWorld(new THREE.Vector3(p[0],p[1],p[2]));
+    const groundY=groundWorldAt(w.x,w.z);
+    const obstacleTop=obstacleTopAtWorld(w.x,w.z,.025);
+    const safeY=Math.max(groundY,obstacleTop===null?-Infinity:obstacleTop)+.075;
+    correction=Math.max(correction,safeY-w.y);
+  }
+  if(correction>0){const lift=Math.min(correction,.18);robot.position.y+=lift;bodyVy=Math.max(0,bodyVy*.25);robot.updateMatrixWorld(true);}
+  return correction;
+}
+function setCollisionDisplay(){const show=$('showColliders').checked;robotColliders.forEach(c=>c.visible=show);obstacleHelpers.forEach(h=>h.visible=show);groundSafetyCollider.visible=show;}
+$('showColliders').addEventListener('change',setCollisionDisplay);
+$('stepPlanner').addEventListener('change',()=>{const on=$('stepPlanner').checked;$('stepPlanStatus').textContent=on?'Planificador activo · buscando apoyos seguros':'Planificador desactivado · pisadas periódicas';stepMarkers.forEach(m=>m.visible=on);});
+function updateTerrainAndSensors(){
+  const pitch=Number($('slopeLong').value),roll=Number($('slopeSide').value);
+  $('slopeLongVal').textContent=pitch+'°';$('slopeSideVal').textContent=roll+'°';
+  $('imuLong').textContent=pitch+'°';$('imuSide').textContent=roll+'°';
+  const total=Math.sqrt(pitch*pitch+roll*roll);$('imuTotal').textContent=total.toFixed(1)+'°';
+  // La pendiente se representa visualmente en el terreno y en la inclinación del chasis.
+  terrain.rotation.set(THREE.MathUtils.degToRad(roll),0,THREE.MathUtils.degToRad(-pitch));
+  syncTerrainVerticalOffset();
+  robot.rotation.set(THREE.MathUtils.degToRad(roll*.38),robot.rotation.y,THREE.MathUtils.degToRad(-pitch*.38));
+  const load=Number($('load').value),long=Number($('long').value)/50,side=Number($('side').value)/50;
+  const nearEdge=Math.abs(long)>.92||Math.abs(side)>.92;
+  const danger=total>16||nearEdge;
+  updateSimpleStability(!running?'En reposo':danger?'Peligro':'Compensado',0);
+}
+function updateLoadVisualization(){
+  const load=Number($('load').value),long=Number($('long').value)/50,side=Number($('side').value)/50;
+  // Convención: frente = +X; izquierda del robot = +Z.
+  // El conjunto completo se traslada como una sola pieza, evitando
+  // diferencias de desplazamiento entre los cultivos y el centro de carga.
+  const cx=long*.24,cz=side*.22;
+  const cargoScale=load<=0?0:(.45+.55*(load/50));
+  cargoGroup.position.set(cx,0,cz);
+  produce.forEach(obj=>{
+    obj.visible=load>0;
+    obj.scale.setScalar(cargoScale);
+  });
+  cgMarker.position.set(cx,2.38,cz);
+  // Reparto bilineal ilustrativo: +Z corresponde al lado izquierdo.
+  const front=THREE.MathUtils.clamp(.5+long*.42,0,1);
+  const left=THREE.MathUtils.clamp(.5+side*.42,0,1);
+  const shares=[(1-front)*(1-left),(1-front)*left,front*(1-left),front*left];
+  shares.forEach((fraction,i)=>{
+    const kg=load*fraction,percent=fraction*100;
+    $('share'+i).textContent=kg.toFixed(1)+' kg · '+percent.toFixed(0)+'%';
+    $('bar'+i).style.width=percent+'%';
+  });
+  $('cgReadout').textContent=`Centro de carga: ${long>0?'adelante':long<0?'atrás':'centrado'} (${Math.abs(Number($('long').value))}%) · ${side>0?'izquierda':side<0?'derecha':'centrado'} (${Math.abs(Number($('side').value))}%)`;
+  const payloadFraction=load/(65+load);
+  const effectiveCx=cx*payloadFraction,effectiveCz=cz*payloadFraction;
+  const outside=Math.abs(effectiveCx)>.105 || Math.abs(effectiveCz)>.095;
+  const uneven=Math.max(...shares)-Math.min(...shares)>.30;
+  const status=$('balanceStatus');
+  if(load===0){status.textContent='Equilibrio visual: sin carga';status.className='status balanceGood';}
+  else if(outside){status.textContent='Atención: centro de carga cerca del borde del área de apoyo';status.className='status balanceBad';}
+  else if(uneven){status.textContent='Atención: carga distribuida de forma desigual';status.className='status balanceWarn';}
+  else{status.textContent='Equilibrio visual: carga relativamente centrada';status.className='status balanceGood';}
+  updateTerrainAndSensors();
+}
+['load','long','side','speed'].forEach(id=>$(id).addEventListener('input',()=>{labels();updateLoadVisualization();}));
+['slopeLong','slopeSide'].forEach(id=>$(id).addEventListener('input',updateTerrainAndSensors));
+setTerrain('flat');
+$('terrainType').addEventListener('change',e=>setTerrain(e.target.value));
+function refreshUnevenTerrain(){ $('roughVal').textContent=$('roughness').value+'%';setTerrain($('terrainType').value);$('adaptReadout').textContent=$('unevenTest').checked?'Adaptación de patas: activa · elevación adicional al superar desniveles':'Adaptación de patas: desactivada'; }
+$('unevenTest').addEventListener('change',refreshUnevenTerrain);$('roughness').addEventListener('input',refreshUnevenTerrain);
+$('flatTerrain').onclick=()=>{$('terrainType').value='flat';setTerrain('flat');$('slopeLong').value=0;$('slopeSide').value=0;updateTerrainAndSensors();};
+$('slopeTerrain').onclick=()=>{$('terrainType').value='dirt';setTerrain('dirt');$('slopeLong').value=8;$('slopeSide').value=5;updateTerrainAndSensors();};
+$('obstacleCourse').onclick=()=>{$('terrainType').value='rocks';$('unevenTest').checked=true;$('roughness').value=150;$('gait').value='adaptive';setTerrain('rocks');refreshUnevenTerrain();$('adaptReadout').textContent='Recorrido de obstáculos activo · marcha adaptativa';};
+const controlMode=$('controlMode'),manualPanel=$('manualPanel');
+function selectedLeg(){return legs[Number($('legSelect').value)];}
+function refreshJointSliders(){
+  const m=selectedLeg().manual;
+  $('hipControl').value=m.hip;$('kneeControl').value=m.knee;$('ankleControl').value=m.ankle;
+  $('hipVal').textContent=m.hip+'°';$('kneeVal').textContent=m.knee+'°';$('ankleVal').textContent=m.ankle+'°';
+}
+function applyManualPose(l){
+  l.hip.rotation.z=THREE.MathUtils.degToRad(l.manual.hip);
+  l.knee.rotation.z=THREE.MathUtils.degToRad(l.manual.knee);
+  l.ankle.rotation.z=THREE.MathUtils.degToRad(l.manual.ankle);
+}
+function setControlMode(){
+  const manual=controlMode.value==='manual';
+  manualPanel.hidden=!manual;
+  $('modeHelp').textContent=manual?'La marcha está pausada. Ajustá cadera, rodilla y tobillo de la pata seleccionada.':'En automático, las patas siguen la marcha seleccionada.';
+  if(manual){
+    running=false;$('start').textContent='Iniciar movimiento';
+    legs.forEach(l=>{l.manual.hip=0;l.manual.knee=0;l.manual.ankle=0;applyManualPose(l);});
+    refreshJointSliders();
+  }else{
+    legs.forEach(l=>{l.hip.rotation.z=0;l.knee.rotation.z=0;l.ankle.rotation.z=0;});
+  }
+  labels();
+}
+controlMode.addEventListener('change',setControlMode);
+$('legSelect').addEventListener('change',refreshJointSliders);
+[['hipControl','hip','hipVal'],['kneeControl','knee','kneeVal'],['ankleControl','ankle','ankleVal']].forEach(([id,key,val])=>{
+  $(id).addEventListener('input',()=>{
+    const l=selectedLeg();l.manual[key]=Number($(id).value);$(val).textContent=l.manual[key]+'°';applyManualPose(l);
+  });
+});
+$('resetLeg').onclick=()=>{const l=selectedLeg();l.manual={hip:0,knee:0,ankle:0};applyManualPose(l);refreshJointSliders();};
+$('resetAllLegs').onclick=()=>{legs.forEach(l=>{l.manual={hip:0,knee:0,ankle:0};applyManualPose(l);});refreshJointSliders();};
+$('start').onclick=()=>{if(controlMode.value==='manual')return;running=!running;$('start').textContent=running?'Pausar movimiento':'Iniciar movimiento';labels();};
+$('reset').onclick=()=>{travelDistance=0;t=0;routeHeading=0;routeTarget=0;routeMode='Trayectoria libre';robot.rotation.y=0;terrain.position.z=0;terrain.position.x=0;terrain.position.y=0;robot.position.x=0;robot.position.z=0;camera.position.set(3.8,2.55,5.0);controls.target.set(0,.49,0);$('navigationStatus').textContent='Navegación: trayectoria libre';plannedStepCount=0;avoidedStepCount=0;supportLine.visible=false;legs.forEach((l,i)=>{l.planOffset=.12;l.physics.lastPhase=-1;l.physics.planningSwing=false;l.physics.nextPlanOffset=.12;l.physics.currentZOffset=0;l.physics.swingStartZOffset=0;l.physics.nextZOffset=0;l.physics.avoided=false;l.ankle.position.x=0;l.ankle.position.z=0;stepMarkers[i].visible=false;});bodyVy=0;bodyRoll=0;bodyPitch=0;stabilityDangerTime=0;supportLossTime=0;robot.position.y=0;terrain.position.x=0;$('load').value=25;$('long').value=0;$('side').value=0;$('slopeLong').value=0;$('slopeSide').value=0;running=false;$('start').textContent='Iniciar movimiento';if(controlMode.value==='manual')$('resetAllLegs').click();labels();updateLoadVisualization();};
+$('home').onclick=()=>{camera.position.set(robot.position.x+3.8,robot.position.y+2.55,robot.position.z+5.0);controls.target.set(robot.position.x,robot.position.y+.49,robot.position.z);};
+document.querySelectorAll('[data-case]').forEach(b=>b.onclick=()=>{const c=b.dataset.case;if(c==='center'){$('load').value=35;$('long').value=0;$('side').value=0}if(c==='front'){$('load').value=40;$('long').value=35;$('side').value=0}if(c==='side'){$('load').value=35;$('long').value=0;$('side').value=45}if(c==='over'){$('load').value=55;$('long').value=0;$('side').value=0}labels();updateLoadVisualization();});
+const gaitClock=new THREE.Clock();
+// Controlador de postura: contacto de pie, estimación de apoyo y compensación amortiguada.
+let bodyVy=0,bodyRollRate=0,bodyPitchRate=0,bodyRoll=0,bodyPitch=0,stabilityDangerTime=0,supportLossTime=0;
+const terrainMu={flat:.82,dirt:.68,rocks:.74,sand:.48,mud:.30,grass:.58};
+// Distancia recorrida por ciclo. La fase de las patas y el desplazamiento
+// del suelo derivan de travelDistance: durante apoyo el pie retrocede exactamente
+// la misma distancia que avanza el terreno, evitando el efecto de patinaje.
+const gaitCycleDistance={walk:.62,trot:.50,adaptive:.72};
+let plannedStepCount=0,avoidedStepCount=0;
+const stepMarkers=legs.map(()=>{const m=new THREE.Mesh(new THREE.SphereGeometry(.075,14,10),new THREE.MeshBasicMaterial({color:0x20a66a,transparent:true,opacity:.85}));m.visible=false;terrain.add(m);return m;});
+function planFoothold(leg,nominalWorldX,nominalWorldZ,halfStride){
+  const enabled=$('stepPlanner').checked;
+  if(!enabled)return {offset:halfStride,x:nominalWorldX,z:nominalWorldZ,y:groundWorldAt(nominalWorldX,nominalWorldZ),avoided:false};
+  const candidates=[];
+  const lateral=[0,.10,-.10,.20,-.20,.30,-.30];
+  for(let forward=0;forward<=.72;forward+=.06){
+    for(const dz of lateral){
+      const x=nominalWorldX+forward,z=nominalWorldZ+dz;
+      const obstacle=obstacleTopForFoot(x,z,.18,.18);
+      if(obstacle!==null)continue;
+      const y=groundWorldAt(x,z);
+      const yAhead=groundWorldAt(x+.10,z),yBack=groundWorldAt(x-.10,z);
+      const yLeft=groundWorldAt(x,z+.10),yRight=groundWorldAt(x,z-.10);
+      const slope=Math.abs(yAhead-yBack)+Math.abs(yLeft-yRight);
+      const distance=Math.hypot(forward,dz);
+      const localGrade=terrainGradientAt(x,z).magnitude;
+      const score=distance*1.0+slope*5.2+localGrade*1.8+Math.abs(dz)*.35;
+      candidates.push({offset:(x-robot.position.x)/robot.scale.x-leg.x,x,z,y,score,avoided:forward>.025||Math.abs(dz)>.025});
+    }
+    if(candidates.length&&forward>.18)break;
+  }
+  if(!candidates.length){
+    const x=nominalWorldX+.24,z=nominalWorldZ;
+    return {offset:(x-robot.position.x)/robot.scale.x-leg.x,x,z,y:groundWorldAt(x,z),avoided:true};
+  }
+  candidates.sort((a,b)=>a.score-b.score);
+  return candidates[0];
+}
+function obstacleHeightAlongPath(x0,z0,x1,z1){
+  let highest=0;
+  const steps=16;
+  for(let i=0;i<=steps;i++){
+    const q=i/steps,x=x0+(x1-x0)*q,z=z0+(z1-z0)*q;
+    const top=obstacleTopForFoot(x,z,.17,.17);
+    if(top!==null)highest=Math.max(highest,top-groundWorldAt(x,z));
+  }
+  return Math.max(0,highest);
+}
+function convexHullXZ(points){
+  const pts=points.map(p=>({x:p.x,z:p.z})).sort((a,b)=>a.x-b.x||a.z-b.z);
+  if(pts.length<=2)return pts;
+  const cross=(o,a,b)=>(a.x-o.x)*(b.z-o.z)-(a.z-o.z)*(b.x-o.x);
+  const lower=[];for(const p of pts){while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],p)<=0)lower.pop();lower.push(p);}
+  const upper=[];for(let i=pts.length-1;i>=0;i--){const p=pts[i];while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],p)<=0)upper.pop();upper.push(p);}
+  lower.pop();upper.pop();return lower.concat(upper);
+}
+function distanceToSegmentXZ(p,a,b){
+  const dx=b.x-a.x,dz=b.z-a.z,den=dx*dx+dz*dz;
+  const t=den?THREE.MathUtils.clamp(((p.x-a.x)*dx+(p.z-a.z)*dz)/den,0,1):0;
+  return Math.hypot(p.x-(a.x+t*dx),p.z-(a.z+t*dz));
+}
+function evaluateSupport(points,com){
+  if(points.length<3)return {inside:false,margin:0,hull:[]};
+  const hull=convexHullXZ(points);if(hull.length<3)return {inside:false,margin:0,hull};
+  let inside=false;for(let i=0,j=hull.length-1;i<hull.length;j=i++){
+    const a=hull[i],b=hull[j];if(((a.z>com.z)!==(b.z>com.z))&&(com.x<(b.x-a.x)*(com.z-a.z)/(b.z-a.z)+a.x))inside=!inside;
+  }
+  let d=Infinity;for(let i=0;i<hull.length;i++)d=Math.min(d,distanceToSegmentXZ(com,hull[i],hull[(i+1)%hull.length]));
+  return {inside,margin:inside?d:-d,hull};
+}
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(gaitClock.getDelta(),.025);
+  if(running && controlMode.value==='auto'){
+    const gait=$('gait').value,trot=gait==='trot',adaptiveGait=gait==='adaptive';
+    const speed=Number($('speed').value);
+    // El controlador mira la pendiente por delante y reduce el avance antes de llegar al desnivel.
+    const lookAhead=terrainGradientAt(robot.position.x+.85,robot.position.z);
+    const gradeDeg=THREE.MathUtils.radToDeg(lookAhead.angle);
+    const configuredSlope=Math.hypot(Number($('slopeLong').value),Number($('slopeSide').value));
+    const slopeSeverity=Math.max(gradeDeg,configuredSlope);
+    const slopeSpeedFactor=THREE.MathUtils.clamp(1-Math.max(0,slopeSeverity-5)*.022,.58,1);
+    // Una única variable de avance gobierna el suelo y la fase de las patas.
+    const ds=dt*speed*.62*slopeSpeedFactor;
+    $('adaptReadout').textContent=`Adaptación de pendiente: ${slopeSeverity.toFixed(1)}° · avance ${(slopeSpeedFactor*100).toFixed(0)}%`;
+    travelDistance+=ds;
+    const cycleDistance=gaitCycleDistance[gait]||gaitCycleDistance.walk;
+    t=travelDistance*(Math.PI*2)/cycleDistance;
+    // Detecta obstáculos altos en el corredor frontal y elige el lado con más espacio.
+    updateCollisionHelpers();
+    routeTarget=0;routeMode='Trayectoria libre';
+    if($('autoNavigate')?.checked){
+      const ahead=obstacleBoundsCache.filter(b=>b.max.x>robot.position.x+.55&&b.min.x<robot.position.x+2.15&&b.max.z>robot.position.z-.82&&b.min.z<robot.position.z+.82&&b.max.y>.16);
+      if(ahead.length){
+        const leftClear=!obstacleBoundsCache.some(b=>b.max.x>robot.position.x+.35&&b.min.x<robot.position.x+2.35&&b.max.z>robot.position.z-.02&&b.min.z<robot.position.z+1.55&&b.max.y>.13);
+        const rightClear=!obstacleBoundsCache.some(b=>b.max.x>robot.position.x+.35&&b.min.x<robot.position.x+2.35&&b.min.z<robot.position.z+.02&&b.max.z>robot.position.z-1.55&&b.max.y>.13);
+        if(leftClear||rightClear){routeSide=leftClear&&rightClear?(ahead.reduce((v,b)=>v+(b.max.z+b.min.z)/2-robot.position.z,0)>=0?-1:1):(leftClear?1:-1);routeTarget=routeSide*.58;routeMode=routeSide>0?'Desvío hacia la izquierda':'Desvío hacia la derecha';}
+        else {routeMode='Ruta estrecha · buscando salida';routeTarget=routeSide*.34;}
+      } else if(Math.abs(routeHeading)>.035){routeMode='Regresando a la trayectoria';}
+    }
+    routeHeading+=(routeTarget-routeHeading)*(1-Math.exp(-dt*1.35));
+    terrain.position.x-=ds*Math.cos(routeHeading);
+    terrain.position.z-=ds*Math.sin(routeHeading);
+    rebaseWorldFrame();
+    syncTerrainVerticalOffset();
+    robot.rotation.y=-routeHeading;
+    $('navigationStatus').textContent='Navegación: '+routeMode;
+    updateCollisionHelpers();
+    const offsets=trot?[0,Math.PI,Math.PI,0]:[Math.PI,0,1.5*Math.PI,.5*Math.PI];
+    const stance=adaptiveGait?.68:(trot?.50:.62);
+    const stanceSweep=cycleDistance*stance/robot.scale.x;
+    const stride=stanceSweep/2;
+    const lift=adaptiveGait?.22:(trot?.17:.18);
+    const adaptation=$('unevenTest').checked||adaptiveGait;
+    let footContacts=0,bodyContact=false,totalNormal=0,totalFriction=0,maxSlip=0,supportCount=0;
+    let sumSupportY=0,frontY=0,rearY=0,leftY=0,rightY=0,frontN=0,rearN=0,leftN=0,rightN=0;
+    const supportWorldPoints=[];
+    const mu=terrainMu[$('terrainType').value]||.6;
+    const load=Number($('load').value),long=Number($('long').value)/50,side=Number($('side').value)/50;
+    const totalMass=65+load,weight=totalMass*9.81;
+    const front=THREE.MathUtils.clamp(.5+long*.42,0,1),left=THREE.MathUtils.clamp(.5+side*.42,0,1);
+    const payloadShares=[(1-front)*(1-left),(1-front)*left,front*(1-left),front*left];
+    const baseShare=65/totalMass,payloadShare=load/totalMass;
+    const targetShares=payloadShares.map(v=>baseShare*.25+payloadShare*v);
+    robot.updateMatrixWorld(true);
+    legs.forEach((l,i)=>{
+      const stanceX=Math.sign(l.x)*Math.abs(long)*.055;
+      const stanceZ=Math.sign(l.z)*Math.abs(side)*.075;
+      const ph=((t/(2*Math.PI)+offsets[i]/(2*Math.PI))%1+1)%1;
+      let footX=0,swing=false,u=0;
+      if(ph<stance){
+        if(l.physics.lastPhase>=stance||l.physics.lastPhase<0){
+          if(l.physics.planningSwing){l.planOffset=l.physics.nextPlanOffset;l.physics.currentZOffset=l.physics.nextZOffset;l.physics.planningSwing=false;}
+        }
+        u=ph/stance;
+        // Un pie apoyado acompaña al suelo: retrocede en el marco del robot
+        // a la misma velocidad con la que el terreno se desplaza hacia atrás.
+        footX=l.planOffset-stanceSweep*u;
+      }else{
+        swing=true;u=(ph-stance)/(1-stance);
+        if(!l.physics.planningSwing){
+          l.physics.planningSwing=true;
+          l.physics.swingStartOffset=l.planOffset-stanceSweep;
+          const nominalX=robot.position.x+robot.scale.x*(l.x+stride+stanceX);
+          const nominalZ=robot.position.z+robot.scale.z*(l.z+stanceZ);
+          const plan=planFoothold(l,nominalX,nominalZ,stride);
+          l.physics.nextPlanOffset=plan.offset-stanceX;
+          l.physics.swingStartZOffset=l.physics.currentZOffset;
+          l.physics.nextZOffset=(plan.z-(robot.position.z+robot.scale.z*(l.z+stanceZ)))/robot.scale.z;
+          l.physics.plannedWorldX=plan.x;l.physics.plannedWorldZ=plan.z;l.physics.plannedY=plan.y;
+          l.physics.avoided=plan.avoided;
+          plannedStepCount++;
+          if(plan.avoided)avoidedStepCount++;
+          const marker=stepMarkers[i];marker.position.copy(terrain.worldToLocal(new THREE.Vector3(plan.x,plan.y+.045,plan.z)));marker.visible=$('stepPlanner').checked;
+        }
+        const smooth=u*u*(3-2*u);
+        footX=THREE.MathUtils.lerp(l.physics.swingStartOffset,l.physics.nextPlanOffset,smooth);
+        l.physics.currentZOffset=THREE.MathUtils.lerp(l.physics.swingStartZOffset,l.physics.nextZOffset,smooth);
+      }
+      l.physics.lastPhase=ph;
+      const footZOffset=l.physics.currentZOffset;
+      // La base de apoyo se ensancha suavemente según el desplazamiento de la carga.
+      l.ankle.position.x=stanceX;
+      l.ankle.position.z=footZOffset+stanceZ;
+      const footWorld=robot.localToWorld(new THREE.Vector3(l.x+footX+stanceX,0,l.z+footZOffset+stanceZ));
+      const worldX=footWorld.x,worldZ=footWorld.z;
+      const groundY=groundWorldAt(worldX,worldZ);
+      const obstacleTop=obstacleTopForFoot(worldX,worldZ);
+      const supportY=obstacleTop===null?groundY:Math.max(groundY,obstacleTop);
+      const swingEndX=robot.position.x+robot.scale.x*(l.x+l.physics.nextPlanOffset+stanceX);
+      const swingEndZ=robot.position.z+robot.scale.z*(l.z+l.physics.nextZOffset+stanceZ);
+      const pathObstacle=adaptation&&swing?obstacleHeightAlongPath(worldX,worldZ,swingEndX,swingEndZ):0;
+      const terrainPath= swing?terrainRiseAlongPath(worldX,worldZ,swingEndX,swingEndZ):{rise:0,steepest:0};
+      const approach=adaptation&&swing?Math.max(obstacleApproachHeight(worldX,worldZ,.34),pathObstacle+.035):0;
+      // Eleva antes la pata cuando el próximo apoyo está en una rampa ascendente.
+      const rampClearance=swing?Math.min(.38,terrainPath.rise+.055+terrainPath.steepest*.13):0;
+      const desiredClearance=swing?(lift+approach+rampClearance)*Math.sin(Math.PI*u)+.025:0;
+      // El centro de la almohadilla queda apenas sobre la superficie, nunca debajo del suelo.
+      const desiredLocal=robot.worldToLocal(new THREE.Vector3(worldX,supportY,worldZ));
+      const targetFootY=desiredLocal.y-1.35+.075+desiredClearance;
+      const alpha=1-Math.exp(-dt/(swing?.032:.048));
+      l.physics.footY+=(targetFootY-l.physics.footY)*alpha;
+      // El apoyo nunca puede quedar por debajo de la superficie detectada, incluso al subir una rampa.
+      if(l.physics.footY<targetFootY)l.physics.footY=targetFootY;
+      l.physics.contact=!swing && Math.abs(l.physics.footY-(desiredLocal.y-1.35+.075))<.065;
+      const down=Math.max(.08,-l.physics.footY);
+      const reach=Math.min(Math.hypot(footX,down),1.359);
+      const halfAngle=Math.acos(THREE.MathUtils.clamp(reach/1.36,0,1));
+      const hipAngle=Math.atan2(footX,down)-halfAngle,kneeAngle=2*halfAngle;
+      // Cada pata estima la normal del suelo en SU punto de apoyo. Se transforma
+      // la pendiente del mundo al marco local del robot para compensar avance y lateral.
+      const localGrade=terrainGradientAt(worldX,worldZ);
+      const gradeForward=localGrade.dx*Math.cos(routeHeading)+localGrade.dz*Math.sin(routeHeading);
+      const gradeLateral=-localGrade.dx*Math.sin(routeHeading)+localGrade.dz*Math.cos(routeHeading);
+      const forwardAngle=Math.atan(gradeForward);
+      const lateralAngle=Math.atan(gradeLateral);
+      // IK de dos planos: flexión para alcanzar la altura y abducción para
+      // acompañar la pendiente transversal. El tobillo contrarota para apoyar plano.
+      const targetHipZ=hipAngle+forwardAngle*.30;
+      const targetKneeZ=kneeAngle-forwardAngle*.12;
+      const targetAnkleZ=-(hipAngle+kneeAngle)+forwardAngle*.82;
+      const targetHipX=THREE.MathUtils.clamp(lateralAngle*.42,-.24,.24);
+      const targetKneeX=THREE.MathUtils.clamp(lateralAngle*.22,-.14,.14);
+      const targetAnkleX=THREE.MathUtils.clamp(-lateralAngle*.64,-.26,.26);
+      const jointAlpha=1-Math.exp(-dt/(swing?.032:.050));
+      l.hip.rotation.z+=(targetHipZ-l.hip.rotation.z)*jointAlpha;
+      l.knee.rotation.z+=(targetKneeZ-l.knee.rotation.z)*jointAlpha;
+      l.ankle.rotation.z+=(targetAnkleZ-l.ankle.rotation.z)*jointAlpha;
+      l.hip.rotation.x+=(targetHipX-l.hip.rotation.x)*jointAlpha;
+      l.knee.rotation.x+=(targetKneeX-l.knee.rotation.x)*jointAlpha;
+      l.ankle.rotation.x+=(targetAnkleX-l.ankle.rotation.x)*jointAlpha;
+      const isContact=l.physics.contact;
+      const targetN=isContact?weight*targetShares[i]*1.0:0;
+      const springK=720,damping=62;
+      const penetration=isContact?Math.max(0,(desiredLocal.y-(1.35+l.physics.footY))):0;
+      const targetForce=targetN+springK*penetration;
+      l.physics.normal+=(targetForce-l.physics.normal)*(1-Math.exp(-dt/(damping/springK)));
+      l.physics.normal=THREE.MathUtils.clamp(l.physics.normal,0,weight*.85);
+      l.physics.friction=mu*l.physics.normal;
+      const tangentialDemand=isContact?Math.abs(Math.cos(ph*2*Math.PI))*weight*(.035+.055*speed):0;
+      const slipTarget=isContact?THREE.MathUtils.clamp((tangentialDemand-l.physics.friction)/Math.max(tangentialDemand,1),0,1):0;
+      l.physics.slip+=(slipTarget-l.physics.slip)*(1-Math.exp(-dt/.16));
+      // El deslizamiento se informa como pérdida de tracción; no altera la fase de la marcha.
+      l.physics.slipOffset*=Math.exp(-dt/.25);
+      if(isContact){
+        supportCount++;supportWorldPoints.push(new THREE.Vector3(worldX,supportY,worldZ));totalNormal+=l.physics.normal;totalFriction+=l.physics.friction;maxSlip=Math.max(maxSlip,l.physics.slip);
+        sumSupportY+=supportY;
+        if(l.x>0){frontY+=supportY;frontN++;}else{rearY+=supportY;rearN++;}
+        if(l.z>0){leftY+=supportY;leftN++;}else{rightY+=supportY;rightN++;}
+      }
+    });
+    robot.updateMatrixWorld(true);
+    // La estabilidad se estima con la envolvente convexa de los pies realmente apoyados.
+    const payloadFraction=load/totalMass;
+    const comLocalX=payloadFraction*long*.24;
+    const comLocalZ=payloadFraction*side*.22;
+    const comLocalY=(65*1.55+load*2.02)/totalMass;
+    const comWorld=robot.localToWorld(new THREE.Vector3(comLocalX,comLocalY,comLocalZ));
+    const supportEval=evaluateSupport(supportWorldPoints,comWorld);
+    const avgSupportY=supportCount?supportWorldPoints.reduce((a,p)=>a+p.y,0)/supportCount:0;
+    if(supportEval.hull.length>=3){
+      const linePoints=supportEval.hull.map(p=>robot.worldToLocal(new THREE.Vector3(p.x,avgSupportY+.035,p.z)));
+      linePoints.push(linePoints[0].clone());supportLine.geometry.dispose();supportLine.geometry=new THREE.BufferGeometry().setFromPoints(linePoints);supportLine.visible=true;
+      supportMat.color.set(supportEval.margin>.12?0x238c68:supportEval.inside?0xe4a83a:0xe05d5d);
+    }else{supportLine.visible=false;}
+    const marginCm=supportEval.margin*100;
+    $('stabilityMargin').textContent=supportCount<3?'—':`${marginCm.toFixed(1)} cm`;
+    $('supportCount').textContent=`${supportCount}/4`;
+    // El estado resumido se actualiza una sola vez al final del cálculo de estabilidad.
+    // El controlador mantiene la altura media de los apoyos y alinea suavemente el chasis.
+    let bodyYTarget=0,rollTarget=0,pitchTarget=0;
+    if(supportCount>=3){const avgY=sumSupportY/supportCount;bodyYTarget=THREE.MathUtils.clamp(avgY,robot.position.y-.16,robot.position.y+.16); }else{bodyYTarget=robot.position.y;}
+    // Compensación deliberadamente moderada: el chasis acompaña el terreno
+    // sin inclinarse en exceso por una sola pata alta o un apoyo transitorio.
+    if(leftN&&rightN)rollTarget=THREE.MathUtils.clamp(Math.atan2(leftY/leftN-rightY/rightN,1.25)*.48,-.085,.085);
+    if(frontN&&rearN)pitchTarget=THREE.MathUtils.clamp(-Math.atan2(frontY/frontN-rearY/rearN,1.85)*.46,-.075,.075);
+    const postureAlpha=1-Math.exp(-dt/.14);
+    bodyRoll+=(rollTarget-bodyRoll)*postureAlpha;
+    bodyPitch+=(pitchTarget-bodyPitch)*postureAlpha;
+    const bodyYError=bodyYTarget-robot.position.y;
+    const ay=bodyYError*16.0-bodyVy*8.5;
+    bodyVy=THREE.MathUtils.clamp(bodyVy+ay*dt,-.68,.68);robot.position.y=THREE.MathUtils.clamp(robot.position.y+bodyVy*dt,-.38,.62);
+    const baseRoll=THREE.MathUtils.degToRad(Number($('slopeSide').value))*.38;
+    const basePitch=THREE.MathUtils.degToRad(-Number($('slopeLong').value))*.38;
+    robot.rotation.x+=(baseRoll+bodyRoll-robot.rotation.x)*(1-Math.exp(-dt/.22));
+    robot.rotation.z+=(basePitch+bodyPitch-robot.rotation.z)*(1-Math.exp(-dt/.22));
+    // Seguridad final: el chasis no atraviesa el terreno ni las rocas que queden bajo su huella.
+    applyGroundSafety();
+    for(const c of robotColliders.slice(0,2)){
+      const bb=new THREE.Box3().setFromObject(c);
+      if(obstacleBoundsCache.some(b=>bb.intersectsBox(b)))bodyContact=true;
+    }
+    const totalSlope=Math.hypot(Number($('slopeLong').value),Number($('slopeSide').value));
+    // Una pendiente pronunciada exige precaución, pero no significa por sí sola que el robot vuelque.
+    // El trote puede mantener dos apoyos diagonales durante parte del ciclo.
+    const supportOutside=supportCount>=3&&!supportEval.inside&&supportEval.margin<-.025;
+    const severeSlip=maxSlip>.94;
+    const immediateDanger=bodyContact||supportOutside||severeSlip;
+    stabilityDangerTime=immediateDanger?Math.min(stabilityDangerTime+dt,2):Math.max(0,stabilityDangerTime-dt*2.2);
+    supportLossTime=supportCount<2?Math.min(1,supportLossTime+dt):Math.max(0,supportLossTime-dt*2.5);
+    const stabilityDanger=bodyContact||stabilityDangerTime>.62||supportLossTime>.42;
+    const limitedSupport=supportLossTime>.20;
+    const caution=!stabilityDanger&&(limitedSupport||(supportCount>=3&&supportEval.margin<.065)||maxSlip>.52||totalSlope>14);
+    updateSimpleStability(stabilityDanger?'Peligro':caution?'En reposo':'Compensado',dt);
+    $('collisionStatus').textContent=bodyContact?'Contacto real del chasis con obstáculo':supportCount?`Patas apoyadas: ${supportCount}/4 · ${trot&&supportCount===2?'apoyo diagonal normal':'contacto detectado'}`:'Buscando apoyo';
+    $('collisionStatus').style.borderLeft=bodyContact?'4px solid #e05d5d':supportCount>=3?'4px solid #55b887':'4px solid #e4a83a';
+    $('normalForce').textContent=totalNormal.toFixed(0)+' N';$('frictionForce').textContent=totalFriction.toFixed(0)+' N';
+    $('slipState').textContent=maxSlip>.35?'Alto':maxSlip>.08?'Leve':'Nulo';
+    $('physicsReadout').textContent=`Apoyos: ${supportCount}/4 · μ=${mu.toFixed(2)} · centro de masa robot+carga · base de apoyo adaptativa · IK 3D`;
+    $('stepPlanStatus').textContent=$('stepPlanner').checked?`Planificador activo · ${legs.filter(l=>l.physics.planningSwing).length} patas calculando trayectoria`:'Planificador desactivado · pisadas periódicas';
+    $('plannedSteps').textContent=String(plannedStepCount);$('avoidedSteps').textContent=String(avoidedStepCount);
+  }else{
+    bodyVy*=.85;robot.position.y+=(0-robot.position.y)*Math.min(1,dt*3);
+    const basePitch=THREE.MathUtils.degToRad(-Number($('slopeLong').value))*.38;
+    const baseRoll=THREE.MathUtils.degToRad(Number($('slopeSide').value))*.38;
+    bodyRoll*=Math.exp(-dt/.5);bodyPitch*=Math.exp(-dt/.5);
+    robot.rotation.z+=(basePitch-robot.rotation.z)*Math.min(1,dt*2);
+    robot.rotation.x+=(baseRoll-robot.rotation.x)*Math.min(1,dt*2);
+    applyGroundSafety();
+    $('normalForce').textContent='0 N';$('frictionForce').textContent='0 N';$('slipState').textContent='Nulo';$('stabilityMargin').textContent='—';$('supportCount').textContent='0/4';supportLine.visible=false;updateSimpleStability('En reposo',dt);
+    $('physicsReadout').textContent='Iniciá la marcha para calcular apoyos, fricción y compensación de postura.';
+  }
+  updateCollisionHelpers();controls.update();renderer.render(scene,camera);
+}
+new ResizeObserver(()=>{camera.aspect=host.clientWidth/host.clientHeight;camera.updateProjectionMatrix();renderer.setSize(host.clientWidth,host.clientHeight);}).observe(host);labels();refreshJointSliders();updateLoadVisualization();animate();
+</script></body></html>
